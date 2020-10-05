@@ -21,9 +21,11 @@ extern crate hex;
 extern crate num_traits;
 
 use self::hex::FromHex;
-use self::num_traits::Num;
 
 use super::errors::Error;
+use super::types::padding::{
+    BlankPaddedUtf8String16, BlankPaddedUtf8String32, BlankPaddedUtf8String64,
+};
 use super::types::*;
 use super::*;
 use num_bigint::BigUint;
@@ -106,18 +108,14 @@ fn test_label_from_str() {
 #[serial]
 fn ctx_new() {
     let res = Ctx::new(pkcs11_module_name());
-    assert!(
-        res.is_ok(),
-        "failed to create new context: {}",
-        res.unwrap_err()
-    );
+    assert!(res.is_ok(), "failed to create new context",);
 }
 
 #[test]
 #[serial]
 fn ctx_initialize() {
     let mut ctx = Ctx::new(pkcs11_module_name()).unwrap();
-    let res = ctx.initialize(None);
+    let res = ctx.initialize(CkCInitializeArgs::NoThreads);
     assert!(
         res.is_ok(),
         "failed to initialize context: {}",
@@ -130,11 +128,7 @@ fn ctx_initialize() {
 #[serial]
 fn ctx_new_and_initialize() {
     let res = Ctx::new_and_initialize(pkcs11_module_name());
-    assert!(
-        res.is_ok(),
-        "failed to create or initialize new context: {}",
-        res.unwrap_err()
-    );
+    assert!(res.is_ok(), "failed to create or initialize new context",);
 }
 
 #[test]
@@ -162,10 +156,13 @@ fn ctx_get_info() {
     let info = res.unwrap();
     println!("{:?}", info);
 
-    assert_eq!("SoftHSM", String::from(info.manufacturerID));
+    assert_eq!(
+        "SoftHSM",
+        String::from(BlankPaddedUtf8String32(info.manufacturerID))
+    );
     assert_eq!(
         "Implementation of PKCS11",
-        String::from(info.libraryDescription)
+        String::from(BlankPaddedUtf8String32(info.libraryDescription))
     );
 }
 
@@ -205,18 +202,16 @@ fn ctx_get_slot_infos() {
     for slot in slots[..1].iter() {
         let slot = *slot;
         let res = ctx.get_slot_info(slot);
-        assert!(
-            res.is_ok(),
-            "failed to call C_GetSlotInfo({}): {}",
-            slot,
-            res.unwrap_err()
-        );
+        assert!(res.is_ok(), "failed to call C_GetSlotInfo({})", slot,);
         let info = res.unwrap();
-        println!("Slot {} {:?}", slot, info);
-        assert_eq!("SoftHSM project", String::from(info.manufacturerID));
+        // println!("Slot {} {:?}", slot, info);
+        assert_eq!(
+            "SoftHSM project",
+            String::from(BlankPaddedUtf8String32(info.manufacturerID))
+        );
         assert_eq!(
             format!("SoftHSM slot ID {:#x}", slot),
-            String::from(info.slotDescription)
+            String::from(BlankPaddedUtf8String64(info.slotDescription))
         );
     }
 }
@@ -237,9 +232,18 @@ fn ctx_get_token_infos() {
         );
         let info = res.unwrap();
         println!("Slot {} {:?}", slot, info);
-        assert_eq!("rust-unit-test", String::from(info.label));
-        assert_eq!("SoftHSM project", String::from(info.manufacturerID));
-        assert_eq!("SoftHSM v2", String::from(info.model));
+        assert_eq!(
+            "rust-unit-test",
+            String::from(BlankPaddedUtf8String32(info.label))
+        );
+        assert_eq!(
+            "SoftHSM project",
+            String::from(BlankPaddedUtf8String32(info.manufacturerID))
+        );
+        assert_eq!(
+            "SoftHSM v2",
+            String::from(BlankPaddedUtf8String16(info.model))
+        );
     }
 }
 
@@ -509,110 +513,6 @@ fn ctx_logout() {
     }
 }
 
-#[test]
-fn attr_bool() {
-    let b: CK_BBOOL = CK_FALSE;
-    let attr = CK_ATTRIBUTE::new(CKA_OTP_USER_IDENTIFIER).with_bool(&b);
-    println!("{:?}", attr);
-    let ret: bool = attr.get_bool().unwrap();
-    println!("{}", ret);
-    assert_eq!(false, ret, "attr.get_bool() should have been false");
-
-    let b: CK_BBOOL = CK_TRUE;
-    let attr = CK_ATTRIBUTE::new(CKA_OTP_USER_IDENTIFIER).with_bool(&b);
-    println!("{:?}", attr);
-    let ret: bool = attr.get_bool().unwrap();
-    println!("{}", ret);
-    assert_eq!(true, ret, "attr.get_bool() should have been true");
-}
-
-#[test]
-fn attr_ck_ulong() {
-    let val: CK_ULONG = 42;
-    let attr = CK_ATTRIBUTE::new(CKA_RESOLUTION).with_ck_ulong(&val);
-    println!("{:?}", attr);
-    let ret: CK_ULONG = attr.get_ck_ulong().unwrap();
-    println!("{}", ret);
-    assert_eq!(val, ret, "attr.get_ck_ulong() shouls have been {}", val);
-}
-
-#[test]
-fn attr_ck_long() {
-    let val: CK_LONG = -42;
-    let attr = CK_ATTRIBUTE::new(CKA_RESOLUTION).with_ck_long(&val);
-    println!("{:?}", attr);
-    let ret: CK_LONG = attr.get_ck_long().unwrap();
-    println!("{}", ret);
-    assert_eq!(val, ret, "attr.get_ck_long() shouls have been {}", val);
-}
-
-#[test]
-fn attr_bytes() {
-    let val = vec![0, 1, 2, 3, 3, 4, 5];
-    let attr = CK_ATTRIBUTE::new(CKA_VALUE).with_bytes(val.as_slice());
-    println!("{:?}", attr);
-    let ret: Vec<CK_BYTE> = attr.get_bytes().unwrap();
-    println!("{:?}", ret);
-    assert_eq!(
-        val,
-        ret.as_slice(),
-        "attr.get_bytes() shouls have been {:?}",
-        val
-    );
-}
-
-#[test]
-fn attr_string() {
-    let val = String::from("Löwe 老虎");
-    let attr = CK_ATTRIBUTE::new(CKA_LABEL).with_string(&val);
-    println!("{:?}", attr);
-    let ret = attr.get_string().unwrap();
-    println!("{:?}", ret);
-    assert_eq!(val, ret, "attr.get_string() shouls have been {}", val);
-}
-
-#[test]
-fn attr_date() {
-    let val: CK_DATE = Default::default();
-    let attr = CK_ATTRIBUTE::new(CKA_LABEL).with_date(&val);
-    println!("{:?}", attr);
-    let ret = attr.get_date().unwrap();
-    println!("{:?}", ret);
-    assert_eq!(
-        val.day, ret.day,
-        "attr.get_date() should have been {:?}",
-        val
-    );
-    assert_eq!(
-        val.month, ret.month,
-        "attr.get_date() should have been {:?}",
-        val
-    );
-    assert_eq!(
-        val.year, ret.year,
-        "attr.get_date() should have been {:?}",
-        val
-    );
-}
-
-#[test]
-fn attr_biginteger() {
-    let num_str = "123456789012345678901234567890123456789012345678901234567890123456789012345678";
-    let val = BigUint::from_str_radix(num_str, 10).unwrap();
-    let slice = val.to_bytes_le();
-    let attr = CK_ATTRIBUTE::new(CKA_LABEL).with_biginteger(&slice);
-    println!("{:?}", attr);
-    let ret = attr.get_biginteger().unwrap();
-    println!("{:?}", ret);
-    assert_eq!(ret, val, "attr.get_biginteger() should have been {:?}", val);
-    assert_eq!(
-        ret.to_str_radix(10),
-        num_str,
-        "attr.get_biginteger() should have been {:?}",
-        num_str
-    );
-}
-
 /// This will create and initialize a context, set a SO and USER PIN, and login as the USER.
 /// This is the starting point for all tests that are acting on the token.
 /// If you look at the tests here in a "serial" manner, if all the tests are working up until
@@ -646,30 +546,31 @@ fn ctx_create_object() {
     */
     let (ctx, sh) = fixture_token().unwrap();
 
-    let class = CKO_DATA;
-    let token: CK_BBOOL = CK_TRUE;
-    let private: CK_BBOOL = CK_TRUE;
-    let modifiable: CK_BBOOL = CK_TRUE;
-    let copyable: CK_BBOOL = CK_TRUE;
-    let label = String::from("rust-unit-test");
-    let value = b"Hello World!";
+    let mut class = CKO_DATA;
+    let mut token: CK_BBOOL = CK_TRUE;
+    let mut private: CK_BBOOL = CK_TRUE;
+    let mut modifiable: CK_BBOOL = CK_TRUE;
+    let mut copyable: CK_BBOOL = CK_TRUE;
+    let mut label = String::from("rust-unit-test");
+    let mut value_string = String::from("Hello World!");
+    let value = unsafe { value_string.as_bytes_mut() };
 
-    let template = vec![
-        CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&class),
-        CK_ATTRIBUTE::new(CKA_TOKEN).with_bool(&token),
-        CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&private),
-        CK_ATTRIBUTE::new(CKA_MODIFIABLE).with_bool(&modifiable),
-        CK_ATTRIBUTE::new(CKA_COPYABLE).with_bool(&copyable),
-        CK_ATTRIBUTE::new(CKA_LABEL).with_string(&label),
-        CK_ATTRIBUTE::new(CKA_VALUE).with_bytes(&value[..]),
+    let mut template = vec![
+        CkAttribute::CkaClass(&mut class),
+        CkAttribute::CkaToken(&mut token),
+        CkAttribute::CkaPrivate(&mut private),
+        CkAttribute::CkaModifiable(&mut modifiable),
+        CkAttribute::CkaCopyable(&mut copyable),
+        CkAttribute::CkaLabel(unsafe { label.as_bytes_mut() }),
+        CkAttribute::CkaValue(value.as_mut()),
     ];
     println!("Template: {:?}", template);
-    let res = ctx.create_object(sh, &template);
+    let res = ctx.create_object(sh, &mut template);
     assert!(
         res.is_ok(),
         "failed to call C_CreateObject({}, {:?}): {}",
         sh,
-        &template,
+        &mut template,
         res.is_err()
     );
     let oh = res.unwrap();
@@ -679,24 +580,26 @@ fn ctx_create_object() {
 fn fixture_token_and_object() -> Result<(Ctx, CK_SESSION_HANDLE, CK_OBJECT_HANDLE), Error> {
     let (ctx, sh) = fixture_token()?;
 
-    let class = CKO_DATA;
-    let token: CK_BBOOL = CK_TRUE;
-    let private: CK_BBOOL = CK_TRUE;
-    let modifiable: CK_BBOOL = CK_TRUE;
-    let copyable: CK_BBOOL = CK_TRUE;
-    let label = String::from("rust-unit-test");
-    let value = b"Hello World!";
+    let mut class = CKO_DATA;
+    let mut token: CK_BBOOL = CK_TRUE;
+    let mut private: CK_BBOOL = CK_TRUE;
+    let mut modifiable: CK_BBOOL = CK_TRUE;
+    let mut copyable: CK_BBOOL = CK_TRUE;
+    let mut label = String::from("rust-unit-test");
 
-    let template = vec![
-        CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&class),
-        CK_ATTRIBUTE::new(CKA_TOKEN).with_bool(&token),
-        CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&private),
-        CK_ATTRIBUTE::new(CKA_MODIFIABLE).with_bool(&modifiable),
-        CK_ATTRIBUTE::new(CKA_COPYABLE).with_bool(&copyable),
-        CK_ATTRIBUTE::new(CKA_LABEL).with_string(&label),
-        CK_ATTRIBUTE::new(CKA_VALUE).with_bytes(&value[..]),
+    let mut value_string = String::from("Hello World!");
+    let value = unsafe { value_string.as_bytes_mut() };
+
+    let mut template = vec![
+        CkAttribute::CkaClass(&mut class),
+        CkAttribute::CkaToken(&mut token),
+        CkAttribute::CkaPrivate(&mut private),
+        CkAttribute::CkaModifiable(&mut modifiable),
+        CkAttribute::CkaCopyable(&mut copyable),
+        CkAttribute::CkaLabel(unsafe { label.as_bytes_mut() }),
+        CkAttribute::CkaValue(value.as_mut()),
     ];
-    let oh = ctx.create_object(sh, &template)?;
+    let oh = ctx.create_object(sh, &mut template)?;
     Ok((ctx, sh, oh))
 }
 
@@ -705,11 +608,11 @@ fn fixture_token_and_object() -> Result<(Ctx, CK_SESSION_HANDLE, CK_OBJECT_HANDL
 fn ctx_copy_object() {
     let (ctx, sh, oh) = fixture_token_and_object().unwrap();
 
-    let label2 = String::from("rust-unit-test2");
-    let template2 = vec![CK_ATTRIBUTE::new(CKA_LABEL).with_string(&label2)];
+    let mut label2 = String::from("rust-unit-test2");
+    let mut template2 = vec![CkAttribute::CkaLabel(unsafe { label2.as_bytes_mut() })];
     println!("Template2: {:?}", template2);
 
-    let res = ctx.copy_object(sh, oh, &template2);
+    let res = ctx.copy_object(sh, oh, &mut template2);
     assert!(
         res.is_ok(),
         "failed to call C_CopyObject({}, {}, {:?}): {}",
@@ -760,55 +663,54 @@ fn ctx_get_attribute_value() {
     {
         let (ctx, sh, oh) = fixture_token_and_object().unwrap();
 
-        let mut template = vec![
-            CK_ATTRIBUTE::new(CKA_CLASS),
-            CK_ATTRIBUTE::new(CKA_PRIVATE),
-            CK_ATTRIBUTE::new(CKA_LABEL),
-            CK_ATTRIBUTE::new(CKA_VALUE),
+        let attribute_types = vec![
+            CkAttributeType::CkaClass,
+            CkAttributeType::CkaPrivate,
+            CkAttributeType::CkaLabel,
+            CkAttributeType::CkaValue,
         ];
-        println!("Template: {:?}", template);
-        {
-            let res = ctx.get_attribute_value(sh, oh, &mut template);
-            if !res.is_ok() {
-                // Doing this not as an assert so we can both unwrap_err with the mut template and re-borrow template
-                let err = res.unwrap_err();
-                panic!(
-                    "failed to call C_GetAttributeValue({}, {}, {:?}): {}",
-                    sh, oh, &template, err
-                );
-            }
-            let (rv, _) = res.unwrap();
-            println!("CK_RV: 0x{:x}, Template: {:?}", rv, &template);
-        }
+        println!("Attribute types: {:?}", attribute_types);
 
-        let class: CK_ULONG = 0;
-        let private: CK_BBOOL = 1;
-        let label: String = String::with_capacity(template[2].ulValueLen.try_into().unwrap());
-        let value: Vec<CK_BYTE> = Vec::with_capacity(template[3].ulValueLen.try_into().unwrap());
-        template[0].set_ck_ulong(&class);
-        template[1].set_bool(&private);
-        template[2].set_string(&label);
-        template[3].set_bytes(&value.as_slice());
+        let res = ctx.get_attribute_lengths(sh, oh, &attribute_types);
+        if !res.is_ok() {
+            // Doing this not as an assert so we can both unwrap_err with the mut template and re-borrow template
+            let err = res.unwrap_err();
+            panic!(
+                "failed to call C_GetAttributeValue({}, {}, {:?}): {}",
+                sh, oh, attribute_types, err
+            );
+        }
+        let attribute_lengths = res.unwrap();
+        println!("Attribute lengths: {:?}", attribute_lengths);
+
+        let mut class: CK_ULONG = Default::default();
+        let mut private: CK_BBOOL = Default::default();
+        let mut label: Vec<CK_BYTE> = vec![0; attribute_lengths[2].try_into().unwrap()];
+        let mut value: Vec<CK_BYTE> = vec![0; attribute_lengths[3].try_into().unwrap()];
+
+        let mut template = vec![
+            CkAttribute::CkaClass(&mut class),
+            CkAttribute::CkaPrivate(&mut private),
+            CkAttribute::CkaLabel(&mut label),
+            CkAttribute::CkaValue(&mut value),
+        ];
 
         let res = ctx.get_attribute_value(sh, oh, &mut template);
         if !res.is_ok() {
             // Doing this not as an assert so we can both unwrap_err with the mut template and re-borrow template
             let err = res.unwrap_err();
             panic!(
-                "failed to call C_GetAttributeValue({}, {}, {:?}): {}",
-                sh, oh, &template, err
+                "failed to call C_GetAttributeValue({}, {}): {}",
+                sh, oh, err
             );
         }
-        let (rv, _) = res.unwrap();
-        println!("CK_RV: 0x{:x}, Retrieved Attributes: {:?}", rv, &template);
+        let rv = res.unwrap();
+        println!("CK_RV: 0x{:x}", rv);
 
-        assert_eq!(CKO_DATA, template[0].get_ck_ulong().unwrap());
-        assert_eq!(true, template[1].get_bool().unwrap());
-        assert_eq!(
-            String::from("rust-unit-test"),
-            template[2].get_string().unwrap()
-        );
-        assert_eq!(Vec::from("Hello World!"), template[3].get_bytes().unwrap());
+        assert_eq!(CKO_DATA, class);
+        assert!(private != 0);
+        assert_eq!(Vec::from("rust-unit-test"), label);
+        assert_eq!(Vec::from("Hello World!"), value);
     }
     println!("The end");
 }
@@ -818,10 +720,10 @@ fn ctx_get_attribute_value() {
 fn ctx_set_attribute_value() {
     let (ctx, sh, oh) = fixture_token_and_object().unwrap();
 
-    let value = b"Hello New World!";
-    let template = vec![CK_ATTRIBUTE::new(CKA_LABEL).with_bytes(&value[..])];
+    let mut value: Vec<CK_BYTE> = Vec::from("Hello New World!");
+    let mut template = vec![CkAttribute::CkaLabel(&mut value[..])];
 
-    let res = ctx.set_attribute_value(sh, oh, &template);
+    let res = ctx.set_attribute_value(sh, oh, &mut template);
     assert!(
         res.is_ok(),
         "failed to call C_SetAttributeValue({}, {}, {:?}): {}",
@@ -831,13 +733,10 @@ fn ctx_set_attribute_value() {
         res.unwrap_err()
     );
 
-    let str: Vec<CK_BYTE> = Vec::from("aaaaaaaaaaaaaaaa");
-    let mut template2 = vec![CK_ATTRIBUTE::new(CKA_LABEL).with_bytes(&str.as_slice())];
+    let mut str: Vec<CK_BYTE> = Vec::from("aaaaaaaaaaaaaaaa");
+    let mut template2 = vec![CkAttribute::CkaLabel(str.as_mut_slice())];
     ctx.get_attribute_value(sh, oh, &mut template2).unwrap();
-    assert_eq!(
-        Vec::from("Hello New World!"),
-        template2[0].get_bytes().unwrap()
-    );
+    assert_eq!(Vec::from("Hello New World!"), str,);
 }
 
 #[test]
@@ -845,10 +744,10 @@ fn ctx_set_attribute_value() {
 fn ctx_find_objects_init() {
     let (ctx, sh, _) = fixture_token_and_object().unwrap();
 
-    let label = String::from("rust-unit-test");
-    let template = vec![CK_ATTRIBUTE::new(CKA_LABEL).with_string(&label)];
+    let mut label = String::from("rust-unit-test");
+    let mut template = vec![CkAttribute::CkaLabel(unsafe { label.as_bytes_mut() })];
 
-    let res = ctx.find_objects_init(sh, &template);
+    let res = ctx.find_objects_init(sh, &mut template);
     assert!(
         res.is_ok(),
         "failed to call C_FindObjectsInit({}, {:?}): {}",
@@ -863,10 +762,10 @@ fn ctx_find_objects_init() {
 fn ctx_find_objects() {
     let (ctx, sh, _) = fixture_token_and_object().unwrap();
 
-    let label = String::from("rust-unit-test");
-    let template = vec![CK_ATTRIBUTE::new(CKA_LABEL).with_string(&label)];
+    let mut label = String::from("rust-unit-test");
+    let mut template = vec![CkAttribute::CkaLabel(unsafe { label.as_bytes_mut() })];
 
-    ctx.find_objects_init(sh, &template).unwrap();
+    ctx.find_objects_init(sh, &mut template).unwrap();
 
     let res = ctx.find_objects(sh, 10);
     assert!(
@@ -885,10 +784,10 @@ fn ctx_find_objects() {
 fn ctx_find_objects_final() {
     let (ctx, sh, _) = fixture_token_and_object().unwrap();
 
-    let label = String::from("rust-unit-test");
-    let template = vec![CK_ATTRIBUTE::new(CKA_LABEL).with_string(&label)];
+    let mut label = String::from("rust-unit-test");
+    let mut template = vec![CkAttribute::CkaLabel(unsafe { label.as_bytes_mut() })];
 
-    ctx.find_objects_init(sh, &template).unwrap();
+    ctx.find_objects_init(sh, &mut template).unwrap();
     ctx.find_objects(sh, 10).unwrap();
 
     let res = ctx.find_objects_final(sh);
@@ -925,35 +824,35 @@ fn ctx_generate_key() {
     // CKA_WRAP         bool     true
     // CKA_UNWRAP       bool     true
 
-    let class = CKO_SECRET_KEY;
-    let keyType = CKK_AES;
-    let valueLen = 32;
-    let label = String::from("wrap1-wrap-key");
-    let token: CK_BBOOL = CK_TRUE;
-    let private: CK_BBOOL = CK_TRUE;
-    let encrypt: CK_BBOOL = CK_FALSE;
-    let decrypt: CK_BBOOL = CK_FALSE;
-    let sensitive: CK_BBOOL = CK_FALSE;
-    let extractable: CK_BBOOL = CK_TRUE;
-    let wrap: CK_BBOOL = CK_TRUE;
-    let unwrap: CK_BBOOL = CK_TRUE;
+    let mut class = CKO_SECRET_KEY;
+    let mut keyType = CKK_AES;
+    let mut valueLen = 32;
+    let mut label = String::from("wrap1-wrap-key");
+    let mut token: CK_BBOOL = CK_TRUE;
+    let mut private: CK_BBOOL = CK_TRUE;
+    let mut encrypt: CK_BBOOL = CK_FALSE;
+    let mut decrypt: CK_BBOOL = CK_FALSE;
+    let mut sensitive: CK_BBOOL = CK_FALSE;
+    let mut extractable: CK_BBOOL = CK_TRUE;
+    let mut wrap: CK_BBOOL = CK_TRUE;
+    let mut unwrap: CK_BBOOL = CK_TRUE;
 
-    let template = vec![
-        CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&class),
-        CK_ATTRIBUTE::new(CKA_KEY_TYPE).with_ck_ulong(&keyType),
-        CK_ATTRIBUTE::new(CKA_VALUE_LEN).with_ck_ulong(&valueLen),
-        CK_ATTRIBUTE::new(CKA_LABEL).with_string(&label),
-        CK_ATTRIBUTE::new(CKA_TOKEN).with_bool(&token),
-        CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&private),
-        CK_ATTRIBUTE::new(CKA_ENCRYPT).with_bool(&encrypt),
-        CK_ATTRIBUTE::new(CKA_DECRYPT).with_bool(&decrypt),
-        CK_ATTRIBUTE::new(CKA_SENSITIVE).with_bool(&sensitive),
-        CK_ATTRIBUTE::new(CKA_EXTRACTABLE).with_bool(&extractable),
-        CK_ATTRIBUTE::new(CKA_WRAP).with_bool(&wrap),
-        CK_ATTRIBUTE::new(CKA_UNWRAP).with_bool(&unwrap),
+    let mut template = vec![
+        CkAttribute::CkaClass(&mut class),
+        CkAttribute::CkaKeyType(&mut keyType),
+        CkAttribute::CkaValueLen(&mut valueLen),
+        CkAttribute::CkaLabel(unsafe { label.as_bytes_mut() }),
+        CkAttribute::CkaToken(&mut token),
+        CkAttribute::CkaPrivate(&mut private),
+        CkAttribute::CkaEncrypt(&mut encrypt),
+        CkAttribute::CkaDecrypt(&mut decrypt),
+        CkAttribute::CkaSensitive(&mut sensitive),
+        CkAttribute::CkaExtractable(&mut extractable),
+        CkAttribute::CkaWrap(&mut wrap),
+        CkAttribute::CkaUnwrap(&mut unwrap),
     ];
 
-    let res = ctx.generate_key(sh, &mechanism, &template);
+    let res = ctx.generate_key(sh, &mechanism, &mut template);
     assert!(
         res.is_ok(),
         "failed to call C_Generatekey({}, {:?}, {:?}): {}",
@@ -989,26 +888,26 @@ fn ctx_generate_key_pair() {
     // CKA_SIGN          bool     true
     // CKA_PRIVATE       bool     true
 
-    let privClass = CKO_PRIVATE_KEY;
-    let privKeyType = CKK_RSA;
-    let privLabel = String::from("ca-hsm-priv");
-    let privToken = CK_TRUE;
-    let privPrivate = CK_TRUE;
-    let privSensitive = CK_TRUE;
-    let privUnwrap = CK_FALSE;
-    let privExtractable = CK_FALSE;
-    let privSign = CK_TRUE;
+    let mut privClass = CKO_PRIVATE_KEY;
+    let mut privKeyType = CKK_RSA;
+    let mut privLabel = String::from("ca-hsm-priv");
+    let mut privToken = CK_TRUE;
+    let mut privPrivate = CK_TRUE;
+    let mut privSensitive = CK_TRUE;
+    let mut privUnwrap = CK_FALSE;
+    let mut privExtractable = CK_FALSE;
+    let mut privSign = CK_TRUE;
 
-    let privTemplate = vec![
-        CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&privClass),
-        CK_ATTRIBUTE::new(CKA_KEY_TYPE).with_ck_ulong(&privKeyType),
-        CK_ATTRIBUTE::new(CKA_LABEL).with_string(&privLabel),
-        CK_ATTRIBUTE::new(CKA_TOKEN).with_bool(&privToken),
-        CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&privPrivate),
-        CK_ATTRIBUTE::new(CKA_SENSITIVE).with_bool(&privSensitive),
-        CK_ATTRIBUTE::new(CKA_UNWRAP).with_bool(&privUnwrap),
-        CK_ATTRIBUTE::new(CKA_EXTRACTABLE).with_bool(&privExtractable),
-        CK_ATTRIBUTE::new(CKA_SIGN).with_bool(&privSign),
+    let mut privTemplate = vec![
+        CkAttribute::CkaClass(&mut privClass),
+        CkAttribute::CkaKeyType(&mut privKeyType),
+        CkAttribute::CkaLabel(unsafe { privLabel.as_bytes_mut() }),
+        CkAttribute::CkaToken(&mut privToken),
+        CkAttribute::CkaPrivate(&mut privPrivate),
+        CkAttribute::CkaSensitive(&mut privSensitive),
+        CkAttribute::CkaUnwrap(&mut privUnwrap),
+        CkAttribute::CkaExtractable(&mut privExtractable),
+        CkAttribute::CkaSign(&mut privSign),
     ];
 
     // Public Key Template
@@ -1022,30 +921,30 @@ fn ctx_generate_key_pair() {
     // CKA_VERIFY            bool          true
     // CKA_PRIVATE           bool          true
 
-    let pubClass = CKO_PUBLIC_KEY;
-    let pubKeyType = CKK_RSA;
-    let pubLabel = String::from("ca-hsm-pub");
-    let pubToken = CK_TRUE;
-    let pubPrivate = CK_TRUE;
-    let pubWrap = CK_FALSE;
-    let pubVerify = CK_TRUE;
-    let pubModulusBits: CK_ULONG = 4096;
+    let mut pubClass = CKO_PUBLIC_KEY;
+    let mut pubKeyType = CKK_RSA;
+    let mut pubLabel = String::from("ca-hsm-pub");
+    let mut pubToken = CK_TRUE;
+    let mut pubPrivate = CK_TRUE;
+    let mut pubWrap = CK_FALSE;
+    let mut pubVerify = CK_TRUE;
+    let mut pubModulusBits: CK_ULONG = 4096;
     let pubPublicExponent = BigUint::from(65537u32);
-    let pubPublicExponentSlice = pubPublicExponent.to_bytes_le();
+    let mut pubPublicExponentSlice = pubPublicExponent.to_bytes_le();
 
-    let pubTemplate = vec![
-        CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&pubClass),
-        CK_ATTRIBUTE::new(CKA_KEY_TYPE).with_ck_ulong(&pubKeyType),
-        CK_ATTRIBUTE::new(CKA_LABEL).with_string(&pubLabel),
-        CK_ATTRIBUTE::new(CKA_TOKEN).with_bool(&pubToken),
-        CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&pubPrivate),
-        CK_ATTRIBUTE::new(CKA_WRAP).with_bool(&pubWrap),
-        CK_ATTRIBUTE::new(CKA_VERIFY).with_bool(&pubVerify),
-        CK_ATTRIBUTE::new(CKA_MODULUS_BITS).with_ck_ulong(&pubModulusBits),
-        CK_ATTRIBUTE::new(CKA_PUBLIC_EXPONENT).with_biginteger(&pubPublicExponentSlice),
+    let mut pubTemplate = vec![
+        CkAttribute::CkaClass(&mut pubClass),
+        CkAttribute::CkaKeyType(&mut pubKeyType),
+        CkAttribute::CkaLabel(unsafe { pubLabel.as_bytes_mut() }),
+        CkAttribute::CkaToken(&mut pubToken),
+        CkAttribute::CkaPrivate(&mut pubPrivate),
+        CkAttribute::CkaWrap(&mut pubWrap),
+        CkAttribute::CkaVerify(&mut pubVerify),
+        CkAttribute::CkaModulusBits(&mut pubModulusBits),
+        CkAttribute::CkaPublicExponent(&mut pubPublicExponentSlice),
     ];
 
-    let res = ctx.generate_key_pair(sh, &mechanism, &pubTemplate, &privTemplate);
+    let res = ctx.generate_key_pair(sh, &mechanism, &mut pubTemplate, &mut privTemplate);
     assert!(
         res.is_ok(),
         "failed to call C_GenerateKeyPair({}, {:?}, {:?}, {:?}): {}",
@@ -1073,35 +972,35 @@ fn fixture_token_and_secret_keys(
             ulParameterLen: 0,
         };
 
-        let class = CKO_SECRET_KEY;
-        let keyType = CKK_AES;
-        let valueLen = 32;
-        let label = String::from("wrap1-wrap-key");
-        let token: CK_BBOOL = CK_TRUE;
-        let private: CK_BBOOL = CK_TRUE;
-        let encrypt: CK_BBOOL = CK_FALSE;
-        let decrypt: CK_BBOOL = CK_FALSE;
-        let sensitive: CK_BBOOL = CK_FALSE;
-        let extractable: CK_BBOOL = CK_TRUE;
-        let wrap: CK_BBOOL = CK_TRUE;
-        let unwrap: CK_BBOOL = CK_TRUE;
+        let mut class = CKO_SECRET_KEY;
+        let mut keyType = CKK_AES;
+        let mut valueLen = 32;
+        let mut label = String::from("wrap1-wrap-key");
+        let mut token: CK_BBOOL = CK_TRUE;
+        let mut private: CK_BBOOL = CK_TRUE;
+        let mut encrypt: CK_BBOOL = CK_FALSE;
+        let mut decrypt: CK_BBOOL = CK_FALSE;
+        let mut sensitive: CK_BBOOL = CK_FALSE;
+        let mut extractable: CK_BBOOL = CK_TRUE;
+        let mut wrap: CK_BBOOL = CK_TRUE;
+        let mut unwrap: CK_BBOOL = CK_TRUE;
 
-        let template = vec![
-            CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&class),
-            CK_ATTRIBUTE::new(CKA_KEY_TYPE).with_ck_ulong(&keyType),
-            CK_ATTRIBUTE::new(CKA_VALUE_LEN).with_ck_ulong(&valueLen),
-            CK_ATTRIBUTE::new(CKA_LABEL).with_string(&label),
-            CK_ATTRIBUTE::new(CKA_TOKEN).with_bool(&token),
-            CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&private),
-            CK_ATTRIBUTE::new(CKA_ENCRYPT).with_bool(&encrypt),
-            CK_ATTRIBUTE::new(CKA_DECRYPT).with_bool(&decrypt),
-            CK_ATTRIBUTE::new(CKA_SENSITIVE).with_bool(&sensitive),
-            CK_ATTRIBUTE::new(CKA_EXTRACTABLE).with_bool(&extractable),
-            CK_ATTRIBUTE::new(CKA_WRAP).with_bool(&wrap),
-            CK_ATTRIBUTE::new(CKA_UNWRAP).with_bool(&unwrap),
+        let mut template = vec![
+            CkAttribute::CkaClass(&mut class),
+            CkAttribute::CkaKeyType(&mut keyType),
+            CkAttribute::CkaValueLen(&mut valueLen),
+            CkAttribute::CkaLabel(unsafe { label.as_bytes_mut() }),
+            CkAttribute::CkaToken(&mut token),
+            CkAttribute::CkaPrivate(&mut private),
+            CkAttribute::CkaEncrypt(&mut encrypt),
+            CkAttribute::CkaDecrypt(&mut decrypt),
+            CkAttribute::CkaSensitive(&mut sensitive),
+            CkAttribute::CkaExtractable(&mut extractable),
+            CkAttribute::CkaWrap(&mut wrap),
+            CkAttribute::CkaUnwrap(&mut unwrap),
         ];
 
-        wrapOh = ctx.generate_key(sh, &mechanism, &template)?;
+        wrapOh = ctx.generate_key(sh, &mechanism, &mut template)?;
     }
 
     {
@@ -1124,35 +1023,35 @@ fn fixture_token_and_secret_keys(
         // CKA_WRAP         bool     false
         // CKA_UNWRAP       bool     false
 
-        let class = CKO_SECRET_KEY;
-        let keyType = CKK_AES;
-        let valueLen = 32;
-        let label = String::from("secured-key");
-        let token: CK_BBOOL = CK_TRUE;
-        let private: CK_BBOOL = CK_TRUE;
-        let encrypt: CK_BBOOL = CK_TRUE;
-        let decrypt: CK_BBOOL = CK_TRUE;
-        let sensitive: CK_BBOOL = CK_TRUE;
-        let extractable: CK_BBOOL = CK_TRUE;
-        let wrap: CK_BBOOL = CK_FALSE;
-        let unwrap: CK_BBOOL = CK_FALSE;
+        let mut class = CKO_SECRET_KEY;
+        let mut keyType = CKK_AES;
+        let mut valueLen = 32;
+        let mut label = String::from("secured-key");
+        let mut token: CK_BBOOL = CK_TRUE;
+        let mut private: CK_BBOOL = CK_TRUE;
+        let mut encrypt: CK_BBOOL = CK_TRUE;
+        let mut decrypt: CK_BBOOL = CK_TRUE;
+        let mut sensitive: CK_BBOOL = CK_TRUE;
+        let mut extractable: CK_BBOOL = CK_TRUE;
+        let mut wrap: CK_BBOOL = CK_FALSE;
+        let mut unwrap: CK_BBOOL = CK_FALSE;
 
-        let template = vec![
-            CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&class),
-            CK_ATTRIBUTE::new(CKA_KEY_TYPE).with_ck_ulong(&keyType),
-            CK_ATTRIBUTE::new(CKA_VALUE_LEN).with_ck_ulong(&valueLen),
-            CK_ATTRIBUTE::new(CKA_LABEL).with_string(&label),
-            CK_ATTRIBUTE::new(CKA_TOKEN).with_bool(&token),
-            CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&private),
-            CK_ATTRIBUTE::new(CKA_ENCRYPT).with_bool(&encrypt),
-            CK_ATTRIBUTE::new(CKA_DECRYPT).with_bool(&decrypt),
-            CK_ATTRIBUTE::new(CKA_SENSITIVE).with_bool(&sensitive),
-            CK_ATTRIBUTE::new(CKA_EXTRACTABLE).with_bool(&extractable),
-            CK_ATTRIBUTE::new(CKA_WRAP).with_bool(&wrap),
-            CK_ATTRIBUTE::new(CKA_UNWRAP).with_bool(&unwrap),
+        let mut template = vec![
+            CkAttribute::CkaClass(&mut class),
+            CkAttribute::CkaKeyType(&mut keyType),
+            CkAttribute::CkaValueLen(&mut valueLen),
+            CkAttribute::CkaLabel(unsafe { label.as_bytes_mut() }),
+            CkAttribute::CkaToken(&mut token),
+            CkAttribute::CkaPrivate(&mut private),
+            CkAttribute::CkaEncrypt(&mut encrypt),
+            CkAttribute::CkaDecrypt(&mut decrypt),
+            CkAttribute::CkaSensitive(&mut sensitive),
+            CkAttribute::CkaExtractable(&mut extractable),
+            CkAttribute::CkaWrap(&mut wrap),
+            CkAttribute::CkaUnwrap(&mut unwrap),
         ];
 
-        secOh = ctx.generate_key(sh, &mechanism, &template)?;
+        secOh = ctx.generate_key(sh, &mechanism, &mut template)?;
     }
 
     Ok((ctx, sh, wrapOh, secOh))
@@ -1188,60 +1087,61 @@ fn fixture_key_pair(
         ulParameterLen: 0,
     };
 
-    let privClass = CKO_PRIVATE_KEY;
-    let privKeyType = CKK_RSA;
-    let privLabel = privLabel;
-    let privToken = CK_TRUE;
-    let privPrivate = CK_TRUE;
-    let privSensitive = CK_TRUE;
-    let privUnwrap = CK_FALSE;
-    let privExtractable = CK_FALSE;
-    let privSign = if signVerify { CK_TRUE } else { CK_FALSE };
-    let privSignRecover = if recover { CK_TRUE } else { CK_FALSE };
-    let privDecrypt = if encryptDecrypt { CK_TRUE } else { CK_FALSE };
+    let mut privClass = CKO_PRIVATE_KEY;
+    let mut privKeyType = CKK_RSA;
+    let mut privLabel = privLabel;
+    let mut privToken = CK_TRUE;
+    let mut privPrivate = CK_TRUE;
+    let mut privSensitive = CK_TRUE;
+    let mut privUnwrap = CK_FALSE;
+    let mut privExtractable = CK_FALSE;
+    let mut privSign = if signVerify { CK_TRUE } else { CK_FALSE };
+    let mut privSignRecover = if recover { CK_TRUE } else { CK_FALSE };
+    let mut privDecrypt = if encryptDecrypt { CK_TRUE } else { CK_FALSE };
 
-    let privTemplate = vec![
-        CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&privClass),
-        CK_ATTRIBUTE::new(CKA_KEY_TYPE).with_ck_ulong(&privKeyType),
-        CK_ATTRIBUTE::new(CKA_LABEL).with_string(&privLabel),
-        CK_ATTRIBUTE::new(CKA_TOKEN).with_bool(&privToken),
-        CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&privPrivate),
-        CK_ATTRIBUTE::new(CKA_SENSITIVE).with_bool(&privSensitive),
-        CK_ATTRIBUTE::new(CKA_UNWRAP).with_bool(&privUnwrap),
-        CK_ATTRIBUTE::new(CKA_EXTRACTABLE).with_bool(&privExtractable),
-        CK_ATTRIBUTE::new(CKA_SIGN).with_bool(&privSign),
-        CK_ATTRIBUTE::new(CKA_SIGN_RECOVER).with_bool(&privSignRecover),
-        CK_ATTRIBUTE::new(CKA_DECRYPT).with_bool(&privDecrypt),
+    let mut privTemplate = vec![
+        CkAttribute::CkaClass(&mut privClass),
+        CkAttribute::CkaKeyType(&mut privKeyType),
+        CkAttribute::CkaLabel(unsafe { privLabel.as_bytes_mut() }),
+        CkAttribute::CkaToken(&mut privToken),
+        CkAttribute::CkaPrivate(&mut privPrivate),
+        CkAttribute::CkaSensitive(&mut privSensitive),
+        CkAttribute::CkaUnwrap(&mut privUnwrap),
+        CkAttribute::CkaExtractable(&mut privExtractable),
+        CkAttribute::CkaSign(&mut privSign),
+        CkAttribute::CkaSignRecover(&mut privSignRecover),
+        CkAttribute::CkaDecrypt(&mut privDecrypt),
     ];
 
-    let pubClass = CKO_PUBLIC_KEY;
-    let pubKeyType = CKK_RSA;
-    let pubLabel = pubLabel;
-    let pubToken = CK_TRUE;
-    let pubPrivate = CK_TRUE;
-    let pubWrap = CK_FALSE;
-    let pubVerify = if signVerify { CK_TRUE } else { CK_FALSE };
-    let pubVerifyRecover = if recover { CK_TRUE } else { CK_FALSE };
-    let pubEncrypt = if encryptDecrypt { CK_TRUE } else { CK_FALSE };
-    let pubModulusBits: CK_ULONG = 4096;
+    let mut pubClass = CKO_PUBLIC_KEY;
+    let mut pubKeyType = CKK_RSA;
+    let mut pubLabel = pubLabel;
+    let mut pubToken = CK_TRUE;
+    let mut pubPrivate = CK_TRUE;
+    let mut pubWrap = CK_FALSE;
+    let mut pubVerify = if signVerify { CK_TRUE } else { CK_FALSE };
+    let mut pubVerifyRecover = if recover { CK_TRUE } else { CK_FALSE };
+    let mut pubEncrypt = if encryptDecrypt { CK_TRUE } else { CK_FALSE };
+    let mut pubModulusBits: CK_ULONG = 4096;
     let pubPublicExponent = BigUint::from(65537u32);
-    let pubPublicExponentSlice = pubPublicExponent.to_bytes_le();
+    let mut pubPublicExponentSlice = pubPublicExponent.to_bytes_le();
 
-    let pubTemplate = vec![
-        CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&pubClass),
-        CK_ATTRIBUTE::new(CKA_KEY_TYPE).with_ck_ulong(&pubKeyType),
-        CK_ATTRIBUTE::new(CKA_LABEL).with_string(&pubLabel),
-        CK_ATTRIBUTE::new(CKA_TOKEN).with_bool(&pubToken),
-        CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&pubPrivate),
-        CK_ATTRIBUTE::new(CKA_WRAP).with_bool(&pubWrap),
-        CK_ATTRIBUTE::new(CKA_VERIFY).with_bool(&pubVerify),
-        CK_ATTRIBUTE::new(CKA_VERIFY_RECOVER).with_bool(&pubVerifyRecover),
-        CK_ATTRIBUTE::new(CKA_ENCRYPT).with_bool(&pubEncrypt),
-        CK_ATTRIBUTE::new(CKA_MODULUS_BITS).with_ck_ulong(&pubModulusBits),
-        CK_ATTRIBUTE::new(CKA_PUBLIC_EXPONENT).with_biginteger(&pubPublicExponentSlice),
+    let mut pubTemplate = vec![
+        CkAttribute::CkaClass(&mut pubClass),
+        CkAttribute::CkaKeyType(&mut pubKeyType),
+        CkAttribute::CkaLabel(unsafe { pubLabel.as_bytes_mut() }),
+        CkAttribute::CkaToken(&mut pubToken),
+        CkAttribute::CkaPrivate(&mut pubPrivate),
+        CkAttribute::CkaWrap(&mut pubWrap),
+        CkAttribute::CkaVerify(&mut pubVerify),
+        CkAttribute::CkaVerifyRecover(&mut pubVerifyRecover),
+        CkAttribute::CkaEncrypt(&mut pubEncrypt),
+        CkAttribute::CkaModulusBits(&mut pubModulusBits),
+        CkAttribute::CkaPublicExponent(&mut pubPublicExponentSlice),
     ];
 
-    let (pubOh, privOh) = ctx.generate_key_pair(sh, &mechanism, &pubTemplate, &privTemplate)?;
+    let (pubOh, privOh) =
+        ctx.generate_key_pair(sh, &mechanism, &mut pubTemplate, &mut privTemplate)?;
     Ok((pubOh, privOh))
 }
 
@@ -1263,24 +1163,24 @@ fn fixture_dh_key_pair(
     //	pkcs11.NewAttribute(pkcs11.CKA_TOKEN, false),
     //	pkcs11.NewAttribute(pkcs11.CKA_DERIVE, true),
     //},
-    let privClass = CKO_PRIVATE_KEY;
-    let privKeyType = CKK_DH;
-    let privLabel = privLabel;
-    let privToken = CK_TRUE;
-    let privPrivate = CK_TRUE;
-    let privSensitive = CK_TRUE;
-    let privExtractable = CK_FALSE;
-    let privDerive = CK_TRUE;
+    let mut privClass = CKO_PRIVATE_KEY;
+    let mut privKeyType = CKK_DH;
+    let mut privLabel = privLabel;
+    let mut privToken = CK_TRUE;
+    let mut privPrivate = CK_TRUE;
+    let mut privSensitive = CK_TRUE;
+    let mut privExtractable = CK_FALSE;
+    let mut privDerive = CK_TRUE;
 
-    let privTemplate = vec![
-        CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&privClass),
-        CK_ATTRIBUTE::new(CKA_KEY_TYPE).with_ck_ulong(&privKeyType),
-        CK_ATTRIBUTE::new(CKA_LABEL).with_string(&privLabel),
-        CK_ATTRIBUTE::new(CKA_TOKEN).with_bool(&privToken),
-        CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&privPrivate),
-        CK_ATTRIBUTE::new(CKA_SENSITIVE).with_bool(&privSensitive),
-        CK_ATTRIBUTE::new(CKA_EXTRACTABLE).with_bool(&privExtractable),
-        CK_ATTRIBUTE::new(CKA_DERIVE).with_bool(&privDerive),
+    let mut privTemplate = vec![
+        CkAttribute::CkaClass(&mut privClass),
+        CkAttribute::CkaKeyType(&mut privKeyType),
+        CkAttribute::CkaLabel(unsafe { privLabel.as_bytes_mut() }),
+        CkAttribute::CkaToken(&mut privToken),
+        CkAttribute::CkaPrivate(&mut privPrivate),
+        CkAttribute::CkaSensitive(&mut privSensitive),
+        CkAttribute::CkaExtractable(&mut privExtractable),
+        CkAttribute::CkaDerive(&mut privDerive),
     ];
 
     /*
@@ -1295,34 +1195,35 @@ fn fixture_dh_key_pair(
               },
     */
 
-    let pubClass = CKO_PUBLIC_KEY;
-    let pubKeyType = CKK_DH;
-    let pubLabel = pubLabel;
-    let pubToken = CK_TRUE;
-    let pubPrivate = CK_TRUE;
-    let pubDerive = CK_TRUE;
+    let mut pubClass = CKO_PUBLIC_KEY;
+    let mut pubKeyType = CKK_DH;
+    let mut pubLabel = pubLabel;
+    let mut pubToken = CK_TRUE;
+    let mut pubPrivate = CK_TRUE;
+    let mut pubDerive = CK_TRUE;
     //  2048-bit MODP Group
-    let prime: Vec<u8> = Vec::from_hex(
+    let mut prime: Vec<u8> = Vec::from_hex(
     "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F83655D23DCA3AD961C62F356208552BB9ED529077096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3BE39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF6955817183995497CEA956AE515D2261898FA051015728E5A8AACAA68FFFFFFFFFFFFFFFF",
   ).unwrap();
     // 1536-bit MODP Group
     //let base: Vec<u8> = Vec::from_hex(
     //  "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F83655D23DCA3AD961C62F356208552BB9ED529077096966D670C354E4ABC9804F1746C08CA237327FFFFFFFFFFFFFFFF"
     //).unwrap();
-    let base: Vec<u8> = Vec::from_hex("02").unwrap();
+    let mut base: u8 = 0x02;
 
-    let pubTemplate = vec![
-        CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&pubClass),
-        CK_ATTRIBUTE::new(CKA_KEY_TYPE).with_ck_ulong(&pubKeyType),
-        CK_ATTRIBUTE::new(CKA_LABEL).with_string(&pubLabel),
-        CK_ATTRIBUTE::new(CKA_TOKEN).with_bool(&pubToken),
-        CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&pubPrivate),
-        CK_ATTRIBUTE::new(CKA_DERIVE).with_bool(&pubDerive),
-        CK_ATTRIBUTE::new(CKA_BASE).with_bytes(&base.as_slice()),
-        CK_ATTRIBUTE::new(CKA_PRIME).with_bytes(&prime.as_slice()),
+    let mut pubTemplate = vec![
+        CkAttribute::CkaClass(&mut pubClass),
+        CkAttribute::CkaKeyType(&mut pubKeyType),
+        CkAttribute::CkaLabel(unsafe { pubLabel.as_bytes_mut() }),
+        CkAttribute::CkaToken(&mut pubToken),
+        CkAttribute::CkaPrivate(&mut pubPrivate),
+        CkAttribute::CkaDerive(&mut pubDerive),
+        CkAttribute::CkaBase(&mut base),
+        CkAttribute::CkaPrime(prime.as_mut_slice()),
     ];
 
-    let (pubOh, privOh) = ctx.generate_key_pair(sh, &mechanism, &pubTemplate, &privTemplate)?;
+    let (pubOh, privOh) =
+        ctx.generate_key_pair(sh, &mechanism, &mut pubTemplate, &mut privTemplate)?;
     Ok((pubOh, privOh))
 }
 
@@ -1844,33 +1745,33 @@ fn ctx_unwrap_key() {
 
     let wrappedKey = ctx.wrap_key(sh, &mechanism, wrapOh, secOh).unwrap();
 
-    let class = CKO_SECRET_KEY;
-    let keyType = CKK_AES;
-    let label = String::from("secured-key-unwrapped");
-    let token: CK_BBOOL = CK_TRUE;
-    let private: CK_BBOOL = CK_TRUE;
-    let encrypt: CK_BBOOL = CK_TRUE;
-    let decrypt: CK_BBOOL = CK_TRUE;
-    let sensitive: CK_BBOOL = CK_TRUE;
-    let extractable: CK_BBOOL = CK_TRUE;
-    let wrap: CK_BBOOL = CK_FALSE;
-    let unwrap: CK_BBOOL = CK_FALSE;
+    let mut class = CKO_SECRET_KEY;
+    let mut keyType = CKK_AES;
+    let mut label = String::from("secured-key-unwrapped");
+    let mut token: CK_BBOOL = CK_TRUE;
+    let mut private: CK_BBOOL = CK_TRUE;
+    let mut encrypt: CK_BBOOL = CK_TRUE;
+    let mut decrypt: CK_BBOOL = CK_TRUE;
+    let mut sensitive: CK_BBOOL = CK_TRUE;
+    let mut extractable: CK_BBOOL = CK_TRUE;
+    let mut wrap: CK_BBOOL = CK_FALSE;
+    let mut unwrap: CK_BBOOL = CK_FALSE;
 
-    let template = vec![
-        CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&class),
-        CK_ATTRIBUTE::new(CKA_KEY_TYPE).with_ck_ulong(&keyType),
-        CK_ATTRIBUTE::new(CKA_LABEL).with_string(&label),
-        CK_ATTRIBUTE::new(CKA_TOKEN).with_bool(&token),
-        CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&private),
-        CK_ATTRIBUTE::new(CKA_ENCRYPT).with_bool(&encrypt),
-        CK_ATTRIBUTE::new(CKA_DECRYPT).with_bool(&decrypt),
-        CK_ATTRIBUTE::new(CKA_SENSITIVE).with_bool(&sensitive),
-        CK_ATTRIBUTE::new(CKA_EXTRACTABLE).with_bool(&extractable),
-        CK_ATTRIBUTE::new(CKA_WRAP).with_bool(&wrap),
-        CK_ATTRIBUTE::new(CKA_UNWRAP).with_bool(&unwrap),
+    let mut template = vec![
+        CkAttribute::CkaClass(&mut class),
+        CkAttribute::CkaKeyType(&mut keyType),
+        CkAttribute::CkaLabel(unsafe { label.as_bytes_mut() }),
+        CkAttribute::CkaToken(&mut token),
+        CkAttribute::CkaPrivate(&mut private),
+        CkAttribute::CkaEncrypt(&mut encrypt),
+        CkAttribute::CkaDecrypt(&mut decrypt),
+        CkAttribute::CkaSensitive(&mut sensitive),
+        CkAttribute::CkaExtractable(&mut extractable),
+        CkAttribute::CkaWrap(&mut wrap),
+        CkAttribute::CkaUnwrap(&mut unwrap),
     ];
 
-    let res = ctx.unwrap_key(sh, &mechanism, wrapOh, &wrappedKey, &template);
+    let res = ctx.unwrap_key(sh, &mechanism, wrapOh, &wrappedKey, &mut template);
     assert!(
         res.is_ok(),
         "failed to call C_UnwrapKey({}, {:?}, {}, {:?}, {:?}): {}",
@@ -2902,21 +2803,27 @@ fn ctx_derive_key() {
     .unwrap();
 
     // 2. retrieve the public key bytes from both
-    let mut template = vec![CK_ATTRIBUTE::new(CKA_VALUE)];
+    let attribute_types = vec![CkAttributeType::CkaValue];
+    println!("Attribute types: {:?}", attribute_types);
+    let res = ctx.get_attribute_lengths(sh, pubOh1, &attribute_types);
+    let attribute_lengths = res.unwrap();
+
+    let mut value: Vec<CK_BYTE> = vec![0; attribute_lengths[0].try_into().unwrap()];
+    let mut template = vec![CkAttribute::CkaValue(&mut value)];
     ctx.get_attribute_value(sh, pubOh1, &mut template).unwrap();
-    let value: Vec<CK_BYTE> = Vec::with_capacity(template[0].ulValueLen.try_into().unwrap());
-    template[0].set_bytes(&value.as_slice());
-    ctx.get_attribute_value(sh, pubOh1, &mut template).unwrap();
 
-    let pub1Bytes = template[0].get_bytes().unwrap();
+    let pub1Bytes = value;
 
-    let mut template = vec![CK_ATTRIBUTE::new(CKA_VALUE)];
+    let attribute_types = vec![CkAttributeType::CkaValue];
+    println!("Attribute types: {:?}", attribute_types);
+    let res = ctx.get_attribute_lengths(sh, pubOh2, &attribute_types);
+    let attribute_lengths = res.unwrap();
+
+    let mut value: Vec<CK_BYTE> = vec![0; attribute_lengths[0].try_into().unwrap()];
+    let mut template = vec![CkAttribute::CkaValue(&mut value)];
     ctx.get_attribute_value(sh, pubOh2, &mut template).unwrap();
-    let value: Vec<CK_BYTE> = Vec::with_capacity(template[0].ulValueLen.try_into().unwrap());
-    template[0].set_bytes(&value.as_slice());
-    ctx.get_attribute_value(sh, pubOh2, &mut template).unwrap();
 
-    let pub2Bytes = template[0].get_bytes().unwrap();
+    let pub2Bytes = value;
 
     // 3. derive the first secret key
     let mechanism = CK_MECHANISM {
@@ -2925,27 +2832,27 @@ fn ctx_derive_key() {
         ulParameterLen: pub2Bytes.len().try_into().unwrap(),
     };
 
-    let class = CKO_SECRET_KEY;
-    let keyType = CKK_AES;
-    let valueLen = 32;
-    let label = String::from("derived-key-1");
-    let token: CK_BBOOL = CK_TRUE;
-    let private: CK_BBOOL = CK_TRUE;
-    let sensitive: CK_BBOOL = CK_FALSE;
-    let extractable: CK_BBOOL = CK_TRUE;
+    let mut class = CKO_SECRET_KEY;
+    let mut keyType = CKK_AES;
+    let mut valueLen = 32;
+    let mut label: Vec<CK_BYTE> = Vec::from("derived-key-1");
+    let mut token: CK_BBOOL = CK_TRUE;
+    let mut private: CK_BBOOL = CK_TRUE;
+    let mut sensitive: CK_BBOOL = CK_FALSE;
+    let mut extractable: CK_BBOOL = CK_TRUE;
 
-    let template = vec![
-        CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&class),
-        CK_ATTRIBUTE::new(CKA_KEY_TYPE).with_ck_ulong(&keyType),
-        CK_ATTRIBUTE::new(CKA_VALUE_LEN).with_ck_ulong(&valueLen),
-        CK_ATTRIBUTE::new(CKA_LABEL).with_string(&label),
-        CK_ATTRIBUTE::new(CKA_TOKEN).with_bool(&token),
-        CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&private),
-        CK_ATTRIBUTE::new(CKA_SENSITIVE).with_bool(&sensitive),
-        CK_ATTRIBUTE::new(CKA_EXTRACTABLE).with_bool(&extractable),
+    let mut template = vec![
+        CkAttribute::CkaClass(&mut class),
+        CkAttribute::CkaKeyType(&mut keyType),
+        CkAttribute::CkaValueLen(&mut valueLen),
+        CkAttribute::CkaLabel(&mut label[..]),
+        CkAttribute::CkaToken(&mut token),
+        CkAttribute::CkaPrivate(&mut private),
+        CkAttribute::CkaSensitive(&mut sensitive),
+        CkAttribute::CkaExtractable(&mut extractable),
     ];
 
-    let res = ctx.derive_key(sh, &mechanism, privOh1, &template);
+    let res = ctx.derive_key(sh, &mechanism, privOh1, &mut template);
     assert!(
         res.is_ok(),
         "failed to call C_DeriveKey({}, {:?}, {}, {:?}): {}",
@@ -2965,27 +2872,27 @@ fn ctx_derive_key() {
         ulParameterLen: pub1Bytes.len().try_into().unwrap(),
     };
 
-    let class = CKO_SECRET_KEY;
-    let keyType = CKK_AES;
-    let valueLen = 32;
-    let label = String::from("derived-key-2");
-    let token: CK_BBOOL = CK_TRUE;
-    let private: CK_BBOOL = CK_TRUE;
-    let sensitive: CK_BBOOL = CK_FALSE;
-    let extractable: CK_BBOOL = CK_TRUE;
+    let mut class = CKO_SECRET_KEY;
+    let mut keyType = CKK_AES;
+    let mut valueLen = 32;
+    let mut label = Vec::from("derived-key-2");
+    let mut token: CK_BBOOL = CK_TRUE;
+    let mut private: CK_BBOOL = CK_TRUE;
+    let mut sensitive: CK_BBOOL = CK_FALSE;
+    let mut extractable: CK_BBOOL = CK_TRUE;
 
-    let template = vec![
-        CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&class),
-        CK_ATTRIBUTE::new(CKA_KEY_TYPE).with_ck_ulong(&keyType),
-        CK_ATTRIBUTE::new(CKA_VALUE_LEN).with_ck_ulong(&valueLen),
-        CK_ATTRIBUTE::new(CKA_LABEL).with_string(&label),
-        CK_ATTRIBUTE::new(CKA_TOKEN).with_bool(&token),
-        CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&private),
-        CK_ATTRIBUTE::new(CKA_SENSITIVE).with_bool(&sensitive),
-        CK_ATTRIBUTE::new(CKA_EXTRACTABLE).with_bool(&extractable),
+    let mut template = vec![
+        CkAttribute::CkaClass(&mut class),
+        CkAttribute::CkaKeyType(&mut keyType),
+        CkAttribute::CkaValueLen(&mut valueLen),
+        CkAttribute::CkaLabel(&mut label[..]),
+        CkAttribute::CkaToken(&mut token),
+        CkAttribute::CkaPrivate(&mut private),
+        CkAttribute::CkaSensitive(&mut sensitive),
+        CkAttribute::CkaExtractable(&mut extractable),
     ];
 
-    let res = ctx.derive_key(sh, &mechanism, privOh2, &template);
+    let res = ctx.derive_key(sh, &mechanism, privOh2, &mut template);
     assert!(
         res.is_ok(),
         "failed to call C_DeriveKey({}, {:?}, {}, {:?}): {}",
@@ -2999,21 +2906,25 @@ fn ctx_derive_key() {
     println!("2nd Derived Secret Key Object Handle: {}", secOh2);
 
     // 5. retrieve the derived private keys from both
-    let mut template = vec![CK_ATTRIBUTE::new(CKA_VALUE)];
+    let attribute_types = vec![CkAttributeType::CkaValue];
+    let res = ctx.get_attribute_lengths(sh, secOh1, &attribute_types);
+    let attribute_lengths = res.unwrap();
+
+    let mut value: Vec<CK_BYTE> = vec![0; attribute_lengths[0].try_into().unwrap()];
+    let mut template = vec![CkAttribute::CkaValue(&mut value)];
     ctx.get_attribute_value(sh, secOh1, &mut template).unwrap();
-    let value: Vec<CK_BYTE> = Vec::with_capacity(template[0].ulValueLen.try_into().unwrap());
-    template[0].set_bytes(&value.as_slice());
-    ctx.get_attribute_value(sh, secOh1, &mut template).unwrap();
 
-    let sec1Bytes = template[0].get_bytes().unwrap();
+    let sec1Bytes = value;
 
-    let mut template = vec![CK_ATTRIBUTE::new(CKA_VALUE)];
+    let attribute_types = vec![CkAttributeType::CkaValue];
+    let res = ctx.get_attribute_lengths(sh, secOh2, &attribute_types);
+    let attribute_lengths = res.unwrap();
+
+    let mut value: Vec<CK_BYTE> = vec![0; attribute_lengths[0].try_into().unwrap()];
+    let mut template = vec![CkAttribute::CkaValue(&mut value)];
     ctx.get_attribute_value(sh, secOh2, &mut template).unwrap();
-    let value: Vec<CK_BYTE> = Vec::with_capacity(template[0].ulValueLen.try_into().unwrap());
-    template[0].set_bytes(&value.as_slice());
-    ctx.get_attribute_value(sh, secOh2, &mut template).unwrap();
 
-    let sec2Bytes = template[0].get_bytes().unwrap();
+    let sec2Bytes = value;
 
     println!("1st Derived Key Bytes: {:?}", sec1Bytes);
     println!("2nd Derived Key Bytes: {:?}", sec2Bytes);
@@ -3125,35 +3036,29 @@ fn ctx_get_invalid_attribute_value() {
         let (ctx, sh, oh) = fixture_token_and_object().unwrap();
 
         // Wrong size to trigger an error.
-        let label: String = String::with_capacity(1);
+        let mut label: Vec<CK_BYTE> = vec![0; 1];
         // Length is not important as it should fail before: the attribute does not exist in the
         // object.
-        let public_exponent: Vec<CK_BYTE> = Vec::with_capacity(3);
+        let mut public_exponent: Vec<CK_BYTE> = vec![0; 3];
 
         let mut template = vec![
-            CK_ATTRIBUTE::new(CKA_LABEL),
-            CK_ATTRIBUTE::new(CKA_PUBLIC_EXPONENT),
+            CkAttribute::CkaLabel(&mut label),
+            CkAttribute::CkaPublicExponent(&mut public_exponent),
         ];
-
-        template[0].set_string(&label);
-        template[1].set_bytes(&public_exponent.as_slice());
-
-        println!("Template: {:?}", template);
 
         let res = ctx.get_attribute_value(sh, oh, &mut template);
         if !res.is_ok() {
             // Doing this not as an assert so we can both unwrap_err with the mut template and re-borrow template
             let err = res.unwrap_err();
             panic!(
-                "failed to call C_GetAttributeValue({}, {}, {:?}): {}",
-                sh, oh, &template, err
+                "failed to call C_GetAttributeValue({}, {}): {}",
+                sh, oh, err
             );
         }
-        let (rv, _) = res.unwrap();
-        println!("CK_RV: 0x{:x}, Template: {:?}", rv, &template);
+        let rv = res.unwrap();
+        println!("CK_RV: 0x{:x}", rv);
 
-        template[0].get_string().unwrap_err();
-        template[1].get_bytes().unwrap_err();
+        assert_eq!(rv, CKR_ATTRIBUTE_TYPE_INVALID);
     }
     println!("The end");
 }

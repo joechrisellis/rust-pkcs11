@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::types::*;
+use pkcs11_sys::*;
 
 #[derive(Debug)]
 pub enum Error {
